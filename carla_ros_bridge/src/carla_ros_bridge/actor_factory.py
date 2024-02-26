@@ -290,22 +290,22 @@ class ActorFactory(object):
         else:
             parent = None
 
-        if type_id == TFSensor.get_blueprint_name():
+        if type_id == "sensor.pseudo.tf":
             actor = TFSensor(uid=uid, name=name, parent=parent, node=self.node)
 
-        elif type_id == OdometrySensor.get_blueprint_name():
+        elif type_id == "sensor.pseudo.odom":
             actor = OdometrySensor(uid=uid,
                                    name=name,
                                    parent=parent,
                                    node=self.node)
 
-        elif type_id == SpeedometerSensor.get_blueprint_name():
+        elif type_id == "sensor.pseudo.speedometer":
             actor = SpeedometerSensor(uid=uid,
                                       name=name,
                                       parent=parent,
                                       node=self.node)
 
-        elif type_id == MarkerSensor.get_blueprint_name():
+        elif type_id == "sensor.pseudo.markers":
             actor = MarkerSensor(uid=uid,
                                  name=name,
                                  parent=parent,
@@ -313,14 +313,14 @@ class ActorFactory(object):
                                  actor_list=self.actors,
                                  world=self.world)
 
-        elif type_id == ActorListSensor.get_blueprint_name():
+        elif type_id == "sensor.pseudo.actor_list":
             actor = ActorListSensor(uid=uid,
                                     name=name,
                                     parent=parent,
                                     node=self.node,
                                     actor_list=self.actors)
 
-        elif type_id == ObjectSensor.get_blueprint_name():
+        elif type_id == "sensor.pseudo.objects":
             actor = ObjectSensor(
                 uid=uid,
                 name=name,
@@ -329,7 +329,7 @@ class ActorFactory(object):
                 actor_list=self.actors,
             )
 
-        elif type_id == TrafficLightsSensor.get_blueprint_name():
+        elif type_id == "sensor.pseudo.traffic_lights":
             actor = TrafficLightsSensor(
                 uid=uid,
                 name=name,
@@ -338,14 +338,14 @@ class ActorFactory(object):
                 actor_list=self.actors,
             )
 
-        elif type_id == OpenDriveSensor.get_blueprint_name():
+        elif type_id == "sensor.pseudo.opendrive_map":
             actor = OpenDriveSensor(uid=uid,
                                     name=name,
                                     parent=parent,
                                     node=self.node,
                                     carla_map=self.world.get_map())
 
-        elif type_id == ActorControl.get_blueprint_name():
+        elif type_id == "actor.pseudo.control":
             actor = ActorControl(uid=uid,
                                  name=name,
                                  parent=parent,
