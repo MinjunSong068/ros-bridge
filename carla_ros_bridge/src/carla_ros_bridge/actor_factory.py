@@ -290,6 +290,24 @@ class ActorFactory(object):
         else:
             parent = None
 
+        # actor_mapping = {
+        #     "sensor.pseudo.tf": TFSensor(uid=uid, name=name, parent=parent, node=self.node),
+        #     "sensor.pseudo.odom": OdometrySensor(uid=uid, name=name, parent=parent, node=self.node),
+        #     "sensor.pseudo.speedometer": SpeedometerSensor(uid=uid, name=name, parent=parent, node=self.node),
+        #     "sensor.pseudo.markers": MarkerSensor(uid=uid, name=name, parent=parent, node=self.node, actor_list=self.actors, world=self.world),
+        #     "sensor.pseudo.actor_list": ActorListSensor(uid=uid, name=name,parent=parent,node=self.node, actor_list=self.actors),
+        #     "sensor.pseudo,objects": ObjectSensor(uid=uid, name=name, parent=parent, node=self.node, actor_list=self.actors),
+        #     "sensor.pseudo.traffic_lights": TrafficLightsSensor(uid=uid, name=name, parent=parent, node=self.node, actor_list=self.actors),
+        #     "sensor.pseudo.opendrive_map": OpenDriveSensor(uid=uid, name=name, parent=parent, node=self.node, carla_map=self.world.get_map()),
+        #     "sensor.camera.rgb": RgbCamera(uid, name, parent, spawn_pose, self.node, carla_actor, self.sync_mode),
+        #     "sensor.camera.depth": DepthCamera(uid, name, parent, spawn_pose, self.node, carla_actor, self.sync_mode),
+        #     "sensor.camera.semantic_segmentation": SemanticSegmentationCamera(uid, name, parent, spawn_pose, self.node, carla_actor, self.sync_mode),
+        #     "sensor.camera.dvs": DVSCamera(uid, name, parent, spawn_pose, self.node, carla_actor, self.sync_mode),
+        #         #needs camera conditional
+        #     "sensor.lidar.ray_cast": Lidar(uid, name, parent, spawn_pose, self.node, carla_actor, self.sync_mode),
+
+        # }
+
         if type_id == "sensor.pseudo.tf":
             actor = TFSensor(uid=uid, name=name, parent=parent, node=self.node)
 
