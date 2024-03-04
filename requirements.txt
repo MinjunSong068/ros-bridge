@@ -7,4 +7,4 @@ pygame
 pexpect
 simple-pid
 networkx
-#carla
+carla
