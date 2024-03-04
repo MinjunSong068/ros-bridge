@@ -33,7 +33,6 @@ sudo apt-get install --no-install-recommends -y \
     python$PYTHON_SUFFIX-rosdep \
     python$PYTHON_SUFFIX-wstool \
     python$PYTHON_SUFFIX-opencv \
-    ros-$ROS_DISTRO-ackermann-msgs \
     ros-$ROS_DISTRO-derived-object-msgs \
     ros-$ROS_DISTRO-cv-bridge \
     ros-$ROS_DISTRO-vision-opencv \
