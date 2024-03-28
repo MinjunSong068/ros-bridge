@@ -49,7 +49,7 @@ class CarlaRosBridge(CompatibleNode):
     """
 
     with open(os.path.join(os.path.dirname(__file__), "CARLA_VERSION")) as f:
-        CARLA_VERSION = f.read()[:-1]
+        CARLA_VERSION = f.read()
 
     # in synchronous mode, if synchronous_mode_wait_for_vehicle_control_command is True,
     # wait for this time until a next tick is triggered.
