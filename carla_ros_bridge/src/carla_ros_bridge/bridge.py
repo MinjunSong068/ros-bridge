@@ -37,6 +37,10 @@ from carla_msgs.msg import CarlaControl, CarlaWeatherParameters
 from carla_msgs.srv import SpawnObject, DestroyObject, GetBlueprints
 from rosgraph_msgs.msg import Clock
 
+#import rospy 
+import time
+from pathlib import Path
+
 
 class CarlaRosBridge(CompatibleNode):
 
@@ -49,7 +53,7 @@ class CarlaRosBridge(CompatibleNode):
 
     # in synchronous mode, if synchronous_mode_wait_for_vehicle_control_command is True,
     # wait for this time until a next tick is triggered.
-    VEHICLE_CONTROL_TIMEOUT = 1.
+    VEHICLE_CONTROL_TIMEOUT = 0.5
 
     def __init__(self):
         """
@@ -70,7 +74,10 @@ class CarlaRosBridge(CompatibleNode):
         self.parameters = params
         self.carla_world = carla_world
 
+        ### ??
         self.ros_timestamp = roscomp.ros_timestamp()
+        ### The callback_group can determine when the callback function can be excuated
+        ### The ReentrantCallbackGroup allow callback functions to be executed in parallel without restriction
         self.callback_group = roscomp.callback_groups.ReentrantCallbackGroup()
 
         self.synchronous_mode_update_thread = None
@@ -112,13 +119,15 @@ class CarlaRosBridge(CompatibleNode):
         # add debug helper
         self.debug_helper = DebugHelper(carla_world.debug, self)
 
-        # Communication topics
-        self.clock_publisher = self.new_publisher(Clock, 'clock', 10)
+        # Communication topics 
+        ###inactive
+        self.clock_publisher = self.new_publisher(Clock, 'clock', 10) 
 
+        ### active topic
         self.status_publisher = CarlaStatusPublisher(
             self.carla_settings.synchronous_mode,
             self.carla_settings.fixed_delta_seconds,
-            self)
+            self) 
 
         # for waiting for ego vehicle control commands in synchronous mode,
         # their ids are maintained in a list.
@@ -130,13 +139,27 @@ class CarlaRosBridge(CompatibleNode):
         if self.sync_mode:
             self.carla_run_state = CarlaControl.PLAY
 
+            ### if sync mode, then create a topic to recieve control msg.
             self.carla_control_subscriber = \
                 self.new_subscription(CarlaControl, "/carla/control",
                                       lambda control: self.carla_control_queue.put(control.command),
                                       qos_profile=10, callback_group=self.callback_group)
 
+            ### Create a txt file to store world_tick time spent
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            file_path = f"./transimision_time/world_tick/world_tick_time_{timestamp}.txt"
+
+            Path("./transimision_time/world_tick/").mkdir(parents=True, exist_ok=True)
+
+            # Open the file for writing or appending
+            with open(file_path, "a") as file:
+                # If the file is empty, write a header
+                if file.tell() == 0:
+                    file.write("world tick time\n")
+            
+            #### Create a Thread to consistantly tick the world and wait for contorl commands
             self.synchronous_mode_update_thread = Thread(
-                target=self._synchronous_mode_update)
+                target=self._synchronous_mode_update, args=(file_path,))
             self.synchronous_mode_update_thread.start()
         else:
             self.timestamp_last_run = 0.0
@@ -246,11 +269,13 @@ class CarlaRosBridge(CompatibleNode):
                 self.carla_control_queue.put(CarlaControl.PAUSE)
                 return
 
-    def _synchronous_mode_update(self):
+    def _synchronous_mode_update(self, file_path):
         """
         execution loop for synchronous mode
         """
         while not self.shutdown.is_set() and roscomp.ok():
+            ### check the CarlaControl msg type from carla_control_queue from /carla/control topic,
+            ### and then publish CarlaStatus msg to topic /carla/status
             self.process_run_state()
 
             if self.parameters['synchronous_mode_wait_for_vehicle_control_command']:
@@ -262,21 +287,35 @@ class CarlaRosBridge(CompatibleNode):
                             self._expected_ego_vehicle_control_command_ids.append(
                                 actor_id)
 
+            ### update available objects
             self.actor_factory.update_available_objects()
+
+            tick_start_time = time.time()
+
+            ### tick the carla server and return next frame id
             frame = self.carla_world.tick()
 
-            world_snapshot = self.carla_world.get_snapshot()
+            world_tick_time = time.time() - tick_start_time
 
+            with open(file_path, "a") as file:
+                file.write(f"{world_tick_time}\n")
+
+            ### record current world and actor information
+            world_snapshot = self.carla_world.get_snapshot()
+            ### set CarlaStatus.frame msg and publish to topic /carla/status
             self.status_publisher.set_frame(frame)
+            ### update the clock of the simulator
             self.update_clock(world_snapshot.timestamp)
             self.logdebug("Tick for frame {} returned. Waiting for sensor data...".format(
                 frame))
+            ### update the world info and actor states
             self._update(frame, world_snapshot.timestamp.elapsed_seconds)
             self.logdebug("Waiting for sensor data finished.")
 
             if self.parameters['synchronous_mode_wait_for_vehicle_control_command']:
                 # wait for all ego vehicles to send a vehicle control command
                 if self._expected_ego_vehicle_control_command_ids:
+                    ### "wait" ends when all the ego commands are received, or untill TIMEOUT
                     if not self._all_vehicle_control_commands_received.wait(CarlaRosBridge.VEHICLE_CONTROL_TIMEOUT):
                         self.logwarn("Timeout ({}s) while waiting for vehicle control commands. "
                                      "Missing command from actor ids {}".format(CarlaRosBridge.VEHICLE_CONTROL_TIMEOUT,
@@ -317,6 +356,7 @@ class CarlaRosBridge(CompatibleNode):
         if not self.sync_mode or \
                 not self.parameters['synchronous_mode_wait_for_vehicle_control_command']:
             return
+        ### lock the ids list and make sure only one ego car can make access and remove its value
         with self._expected_ego_vehicle_control_command_ids_lock:
             if ego_vehicle_id in self._expected_ego_vehicle_control_command_ids:
                 self._expected_ego_vehicle_control_command_ids.remove(
@@ -324,6 +364,8 @@ class CarlaRosBridge(CompatibleNode):
             else:
                 self.logwarn(
                     "Unexpected vehicle control command received from {}".format(ego_vehicle_id))
+            ### if there are still ids, then pass, and _all_vehicle_control_commands_received still watis
+            ### if there in no ids in the list, then set flag to true, waiting ends.
             if not self._expected_ego_vehicle_control_command_ids:
                 self._all_vehicle_control_commands_received.set()
 
@@ -381,6 +423,9 @@ def main(args=None):
     executor = None
     parameters = {}
 
+    ### the executor can determine which thread the callback function can use. 
+    ### MultiThreadedExecutor Runs callbacks in a pool of threads.
+    ### After .spin(), the executor should take effect
     executor = roscomp.executors.MultiThreadedExecutor()
     carla_bridge = CarlaRosBridge()
     executor.add_node(carla_bridge)
@@ -406,6 +451,7 @@ def main(args=None):
         host=parameters['host'], port=parameters['port']))
 
     try:
+        ###create carla client as an primary client to control carla_world server
         carla_client = carla.Client(
             host=parameters['host'],
             port=parameters['port'])
@@ -425,6 +471,7 @@ def main(args=None):
                 .format(carla_client.get_client_version(),
                         carla_client.get_server_version()))
 
+        ### build carla_world instance
         carla_world = carla_client.get_world()
 
         if "town" in parameters and not parameters['passive']:
@@ -439,10 +486,14 @@ def main(args=None):
                     carla_bridge.loginfo("Loading town '{}' (previous: '{}').".format(
                         parameters["town"], carla_world.get_map().name))
                     carla_world = carla_client.load_world(parameters["town"])
+
+            ### todo: figure out what to do with the .tick()
             carla_world.tick()
 
+        ### input carla_world from primary client and parameters to initialize bridge
         carla_bridge.initialize_bridge(carla_client.get_world(), parameters)
 
+        ### spin the carla_bridge to get ready to all topics and serverces.
         carla_bridge.spin()
 
     except (IOError, RuntimeError) as e:

@@ -57,6 +57,7 @@ try:
     from pygame.locals import K_s
     from pygame.locals import K_w
     from pygame.locals import K_b
+    from pygame.locals import K_z
 except ImportError:
     raise RuntimeError('cannot import pygame, make sure pygame package is installed')
 
@@ -74,7 +75,14 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Bool
+from boundingbox_msg.msg import BoundingBoxArray
 
+import time 
+from decimal import Decimal, getcontext
+getcontext().prec = 9 # Set the precision to 9 decimals
+
+from pathlib import Path
+from collections import deque
 # ==============================================================================
 # -- World ---------------------------------------------------------------------
 # ==============================================================================
@@ -87,10 +95,24 @@ class ManualControl(CompatibleNode):
 
     def __init__(self, resolution):
         super(ManualControl, self).__init__("ManualControl")
+        #self.clock = pygame.time.Clock()
+        #self.start_time = time.time()
+        #self.image_count = 0
+        self.timesteps = deque(maxlen=10)
+
         self._surface = None
         self.role_name = self.get_param("role_name", "ego_vehicle")
         self.hud = HUD(self.role_name, resolution['width'], resolution['height'], self)
         self.controller = KeyboardControl(self.role_name, self.hud, self)
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        self.file_path = f"./transimision_time/sensor_topic_time/rbgcarmera_{self.role_name}_{timestamp}.txt"
+        Path("./transimision_time/sensor_topic_time/").mkdir(parents=True, exist_ok=True)
+        # Open the file for writing or appending
+        with open(self.file_path, "a") as file:
+            # If the file is empty, write a header
+            if file.tell() == 0:
+                file.write("sensor topic time\n")
 
         self.image_subscriber = self.new_subscription(
             Image, "/carla/{}/rgb_view/image".format(self.role_name),
@@ -133,6 +155,32 @@ class ManualControl(CompatibleNode):
         """
         Callback when receiving a camera image
         """
+        #self.clock.get_fps()
+        #self.image_count += 1
+
+        sent_time = float(image.header.stamp.sec + (image.header.stamp.nanosec / 10**9))
+        print("sent_time:{}".format(sent_time))
+
+        current_time = self.get_time()
+        #current_time = time.time()
+        print("current_time:{}".format(current_time))
+
+        sensor_topic_time = Decimal(str(current_time)) - Decimal(str(sent_time))
+        sensor_topic_time = format(sensor_topic_time, '.9f')
+        print("sensor_topic_time:{}".format(sensor_topic_time))
+        with open(self.file_path, "a") as file:
+                file.write(f"{sensor_topic_time}\n")
+
+        self.timesteps.append(current_time)
+
+        if len(self.timesteps) >= 2:
+            elapsed_time = self.timesteps[-1] - self.timesteps[0]
+            client_fps = (len(self.timesteps)-1) / elapsed_time
+        else:
+            client_fps = 0
+        
+        self.hud.update_info_text(client_fps)
+
         array = numpy.frombuffer(image.data, dtype=numpy.dtype("uint8"))
         array = numpy.reshape(array, (image.height, image.width, 4))
         array = array[:, :, :3]
@@ -192,16 +240,34 @@ class KeyboardControl(object):
             "/carla/{}/vehicle_control_cmd_manual".format(self.role_name),
             qos_profile=fast_qos)
 
+        ### Publish self._control to the primary client on callback function "_on_new_carla_frame"
         self.carla_status_subscriber = self.node.new_subscription(
             CarlaStatus,
             "/carla/status",
             self._on_new_carla_frame,
+            qos_profile=10)
+        
+        ### publish self._control after detection
+        self.send_tick_after_detection = False
+
+        self.pcl_detection_control = self.node.new_subscription(
+            BoundingBoxArray,
+            "/carla/{}/pcl_detection".format(self.role_name),
+            self._on_new_detection,
             qos_profile=10)
 
         self.set_autopilot(self._autopilot_enabled)
 
         self.set_vehicle_control_manual_override(
             self.vehicle_control_manual_override)  # disable manual override
+
+    def _on_new_detection(self, data):
+        if self.send_tick_after_detection:
+            self._control.throttle = 1.0 ### dummy control
+            try:
+                self.vehicle_control_publisher.publish(self._control)
+            except Exception as error:
+                self.node.logwarn("Could not send vehicle control: {}".format(error))
 
     def set_vehicle_control_manual_override(self, enable):
         """
@@ -251,6 +317,11 @@ class KeyboardControl(object):
                     self.set_autopilot(self._autopilot_enabled)
                     self.hud.notification('Autopilot %s' %
                                           ('On' if self._autopilot_enabled else 'Off'))
+                elif event.key == K_z: ### addeed here to control send_tick_after_detection
+                    self.send_tick_after_detection = not self.send_tick_after_detection
+                    self.hud.notification('send_tick_after_detection %s' %
+                                          ('On' if self.send_tick_after_detection else 'Off'))
+                
         if not self._autopilot_enabled and self.vehicle_control_manual_override:
             self._parse_vehicle_keys(pygame.key.get_pressed(), clock.get_time())
             self._control.reverse = self._control.gear < 0
@@ -262,7 +333,7 @@ class KeyboardControl(object):
         As CARLA only processes one vehicle control command per tick,
         send the current from within here (once per frame)
         """
-        if not self._autopilot_enabled and self.vehicle_control_manual_override:
+        if not self._autopilot_enabled and not self.send_tick_after_detection and self.vehicle_control_manual_override:
             try:
                 self.vehicle_control_publisher.publish(self._control)
             except Exception as error:
@@ -301,6 +372,8 @@ class HUD(object):
     """
 
     def __init__(self, role_name, width, height, node):
+        #self.clock = clock
+        self.client_fps = 0
         self.role_name = role_name
         self.dim = (width, height)
         self.node = node
@@ -413,7 +486,7 @@ class HUD(object):
         self.yaw = math.degrees(yaw)
         self.update_info_text()
 
-    def update_info_text(self):
+    def update_info_text(self, *args):
         """
         update the displayed info text
         """
@@ -428,7 +501,9 @@ class HUD(object):
         heading += 'E' if 179.5 > yaw > 0.5 else ''
         heading += 'W' if -0.5 > yaw > -179.5 else ''
         fps = 0
-
+        for arg in args:
+            self.client_fps = arg
+        
         time = str(datetime.timedelta(seconds=self.node.get_time()))[:10]
 
         if self.carla_status.fixed_delta_seconds:
@@ -436,7 +511,8 @@ class HUD(object):
         self._info_text = [
             'Frame: % 22s' % self.carla_status.frame,
             'Simulation time: % 12s' % time,
-            'FPS: % 24.1f' % fps, '',
+            'Server FPS: % 17.1f' % fps,
+            'Client FPS: % 17.1f' % self.client_fps, '',
             'Vehicle: % 20s' % ' '.join(self.vehicle_info.type.title().split('.')[1:]),
             'Speed:   % 15.0f km/h' % (3.6 * self.vehicle_status.velocity),
             u'Heading:% 16.0f\N{DEGREE SIGN} % 2s' % (yaw, heading),
@@ -636,6 +712,7 @@ def main(args=None):
 
         while roscomp.ok():
             clock.tick_busy_loop(60)
+            #roscomp.loginfo("client FPSL:{}".format(clock.get_fps()))
             if manual_control_node.render(clock, display):
                 return
             pygame.display.flip()

@@ -15,8 +15,13 @@ nav:
 - ROS Bridge Packages:
   - CARLA Spawn Objects: 'carla_spawn_objects.md'
   - CARLA Manual Control: 'carla_manual_control.md'
+  - CARLA Ackermann Control: 'carla_ackermann_control.md'
   - CARLA Waypoint Publisher: 'carla_waypoint.md'
+  - CARLA AD Agent: 'carla_ad_agent.md'
+  - CARLA AD Demo: 'carla_ad_demo.md'
+  - CARLA ROS Scenario Runner: 'carla_ros_scenario_runner.md'
   - CARLA Twist to Control: 'carla_twist_to_control.md'
+  - RVIZ Plugin: 'rviz_plugin.md'
   - RQT Plugin: 'rqt_plugin.md'
   - PCL Recorder: 'pcl_recorder.md'
 - References:
